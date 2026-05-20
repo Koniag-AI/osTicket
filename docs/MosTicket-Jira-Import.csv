@@ -1,0 +1,291 @@
+Issue Type,Epic Name,Epic Link,Summary,Description,Priority,Labels,Component
+Epic,Ticket Data Model & Lifecycle,,REQ-1: Ticket Data Model & Lifecycle,"Replicate the core osTicket Ticket class and its full lifecycle (creation, status transitions, merge/link, overdue detection) as Salesforce custom objects and automation. Source: include/class.ticket.php",High,mosticket,Data-Model
+Story,,Ticket Data Model & Lifecycle,REQ-1.1: Ticket Object,"Replicate the Ticket class (include/class.ticket.php lines 39-106) as a Salesforce custom object. The osTicket Ticket model uses VerySimpleModel ORM with joins to TicketStatus, Dept, Sla, Staff, Team, User, Topic, and TicketThread.
+
+Fields required:
+- ticket_id (PK), number (auto-number, supports custom format per Help Topic), user_id, status_id, dept_id, sla_id, topic_id, staff_id, team_id, email_id, lock_id
+- ip_address, source (Web/Email/Phone/API/Other), isoverdue (boolean), isanswered (boolean), duedate, est_duedate, reopened, closed, lastupdate, created
+- flags bitmask: FLAG_COMBINE_THREADS (0x0001), FLAG_SEPARATE_THREADS (0x0002), FLAG_LINKED (0x0008), FLAG_PARENT (0x0010)
+- ticket_pid (self-referential for merge/link parent)
+
+Source: include/class.ticket.php lines 39-106, 121-124",High,mosticket,Data-Model
+Story,,Ticket Data Model & Lifecycle,REQ-1.2: Ticket Status,"The TicketStatus model governs states: Open, Closed, Archived, Deleted. Each status has a state property. Closed statuses can define a reopen_status for when a client replies to a closed ticket. Archived tickets cannot be reopened.
+
+Source: include/class.ticket.php lines 1605-1624",High,mosticket,Data-Model
+Story,,Ticket Data Model & Lifecycle,REQ-1.3: Ticket Permissions,"12 granular permission constants must be enforced: PERM_CREATE, PERM_EDIT, PERM_ASSIGN, PERM_RELEASE, PERM_TRANSFER, PERM_REFER, PERM_MERGE, PERM_LINK, PERM_REPLY, PERM_MARKANSWERED, PERM_CLOSE, PERM_DELETE.
+
+Source: include/class.ticket.php lines 108-119",High,mosticket,Security
+Story,,Ticket Data Model & Lifecycle,REQ-1.4: Ticket Creation,"Ticket::create() is the core factory method. It accepts vars from multiple origins (Web, Email, Staff, API) with different validation rules per origin. It processes dynamic forms, applies ticket filters, sets default status, creates a TicketThread, fires Signal::send('ticket.created'), and triggers auto-responses and staff alerts.
+
+Source: include/class.ticket.php lines 4055-4078, 4351-4410",High,mosticket,Data-Model
+Story,,Ticket Data Model & Lifecycle,REQ-1.5: Ticket Merge & Link,"Three merge modes: combine (single thread), separate (threads kept distinct but grouped), visual (link only, no data merge). Child tickets have a ticket_pid pointing to the parent. Merge consolidates collaborators and creates cross-referral for departments.
+
+Source: include/class.ticket.php lines 2521-2580",Medium,mosticket,Data-Model
+Story,,Ticket Data Model & Lifecycle,REQ-1.6: Overdue Detection,"A scheduled process (Ticket::checkOverdue()) queries for open tickets where isoverdue=0 and either est_duedate < NOW() or duedate < NOW(). Matched tickets are marked overdue and trigger onOverdue() alerts.
+
+Source: include/class.ticket.php lines 4724-4740, 2427-2444",High,mosticket,Automation
+Epic,Thread & Communication,,REQ-2: Thread & Communication System,"Replicate osTicket's thread model: message/response/note entries, audit events, collaborators, referrals, and email threading. Source: include/class.thread.php",High,mosticket,Communication
+Story,,Thread & Communication,REQ-2.1: Thread Object,"Each ticket has one Thread container (TicketThread) linked via object_id and object_type. The thread contains ThreadEntry records, ThreadEvent audit records, and Collaborator records.
+
+Source: include/class.thread.php lines 22-55",High,mosticket,Communication
+Story,,Thread & Communication,REQ-2.2: Thread Entry Types,"Three entry types must be supported:
+- M (Message): From client. Visible to everyone. Triggers staff alerts.
+- R (Response): From staff. Visible to everyone. Triggers client/collaborator alerts.
+- N (Note): Internal only. Visible to staff. No external notifications.
+
+Each entry has: body (rich text), poster (staff or user), title, flags, ip_address, created, updated. Entries support a pid (parent ID) for edit history tracking.
+
+Source: include/class.thread.php lines 421-480",High,mosticket,Communication
+Story,,Thread & Communication,REQ-2.3: Thread Events (Audit Trail),"ThreadEvent records log: created, closed, reopened, assigned, transferred, overdue, edited, merged, linked, unlinked, referred, unreferred. Each event has state, timestamp, staff_id, team_id, and data (JSON for details like old/new values).
+
+Source: include/class.thread.php lines 50-53",Medium,mosticket,Communication
+Story,,Thread & Communication,REQ-2.4: Collaborators,"Collaborators are end-users (besides the ticket owner) included in communications. Each has a FLAG_ACTIVE (0x0001) toggle controlling whether they receive CC notifications. Collaborators are linked to the Thread, not the Ticket directly.
+
+Source: include/class.collaborator.php lines 19-35",Medium,mosticket,Communication
+Story,,Thread & Communication,REQ-2.5: Thread Referrals,"A ThreadReferral allows granting temporary visibility of a ticket to agents/departments outside the primary assignment without changing ownership.
+
+Source: include/class.thread.php lines 44-46",Medium,mosticket,Communication
+Story,,Thread & Communication,REQ-2.6: Email Threading,"Outbound emails generate a Message-ID stored on the ThreadEntry. Inbound emails are matched via In-Reply-To and References headers using ThreadEntry::lookupByEmailHeaders() to continue existing threads.
+
+Source: include/api.tickets.php lines 181-233",High,mosticket,Email
+Epic,Departments & Teams,,REQ-3: Departments & Teams,"Replicate department hierarchy, team structure, and help topic routing from osTicket. Source: include/class.dept.php, include/class.team.php, include/class.topic.php",High,mosticket,Data-Model
+Story,,Departments & Teams,REQ-3.1: Department Object,"The Dept class supports hierarchical structure via pid (parent ID). Key fields: name, manager_id (Staff lookup), sla_id, email_id, autoresp_email_id, ispublic, flags.
+
+Department flags:
+- FLAG_ASSIGN_MEMBERS_ONLY (0x0001): Restricts assignment dropdown to dept members
+- FLAG_DISABLE_AUTO_CLAIM (0x0002): Prevents first-responder auto-assignment
+- FLAG_ACTIVE (0x0004)
+- FLAG_ARCHIVED (0x0008): Prevents ticket reopening
+
+Source: include/class.dept.php lines 19-53, 73-76",High,mosticket,Data-Model
+Story,,Departments & Teams,REQ-3.2: Team Object,"Teams are cross-departmental groups. Fields: name, lead_id (Staff), flags (FLAG_NOALERTS to suppress alerts). Teams have a TeamMember junction to Staff. A team is available if active with at least one member.
+
+Source: include/class.team.php lines 17-36, 82-100",Medium,mosticket,Data-Model
+Story,,Departments & Teams,REQ-3.3: Help Topics,"The Topic class acts as a routing table. Each topic can specify: target department, priority override, SLA plan, auto-assign staff/team, custom forms to attach, custom ticket number format, and auto-response toggle. Topics support hierarchical nesting via topic_pid.
+
+Source: include/class.topic.php lines 20-61, 137-164",High,mosticket,Data-Model
+Epic,SLA Plans & Business Hours,,REQ-4: SLA Plans & Business Hours,"Replicate SLA grace period calculation with business hours schedules and holiday support. Source: include/class.sla.php, include/class.schedule.php",High,mosticket,Automation
+Story,,SLA Plans & Business Hours,REQ-4.1: SLA Plan Object,"Fields: name, grace_period (hours), schedule_id, flags (FLAG_ACTIVE, FLAG_ESCALATE for priority escalation on overdue, FLAG_NOALERTS to suppress overdue notifications, FLAG_TRANSIENT to allow override on transfer/topic change).
+
+Source: include/class.sla.php lines 18-29, include/staff/slaplan.inc.php lines 62-113",High,mosticket,Data-Model
+Story,,SLA Plans & Business Hours,REQ-4.2: SLA Selection Hierarchy,"SLA is selected in this priority order:
+1. Filter-trumped SLA (from ticket filter action)
+2. Department's SLA (dept.sla_id)
+3. Help Topic's SLA (topic.sla_id)
+4. System default SLA (cfg.default_sla_id)
+
+Source: include/class.ticket.php lines 1456-1471",High,mosticket,Automation
+Story,,SLA Plans & Business Hours,REQ-4.3: Grace Period Calculation,"Sla::addGracePeriod() computes due date by:
+1. Looking up the schedule (SLA-specific > department's > system default)
+2. If a BusinessHoursSchedule exists, calling addWorkingHours() to skip weekends/holidays
+3. If no schedule, simple addition: created + grace_period * 3600
+
+Source: include/class.sla.php lines 47-66, include/class.ticket.php lines 546-562",High,mosticket,Automation
+Story,,SLA Plans & Business Hours,REQ-4.4: Schedules,"Schedule and BusinessHoursSchedule define working hours. Schedule entries support recurring patterns (daily, weekly, weekdays, weekends). Holidays are subtractive from business hours.
+
+Source: include/class.schedule.php lines 33-43, 171-221",Medium,mosticket,Data-Model
+Epic,Users & Organizations,,REQ-5: Users & Organizations,"Replicate osTicket user model with multi-email support, organization grouping, domain matching, and ticket sharing policies. Source: include/class.user.php, include/class.organization.php",High,mosticket,Data-Model
+Story,,Users & Organizations,REQ-5.1: User Model,"Users support multiple email addresses via UserEmailModel (one-to-many), with a default_email_id. Users can exist as guests (no account) or have a ClientAccount for portal login.
+
+Permissions: PERM_CREATE, PERM_EDIT, PERM_DELETE, PERM_MANAGE, PERM_DIRECTORY.
+
+Source: include/class.user.php lines 48-86, 88-122",High,mosticket,Data-Model
+Story,,Users & Organizations,REQ-5.2: Organization Model,"Organizations group users. Features:
+- Domain Matching: Auto-add users based on email domain
+- Ticket Sharing: SHARE_PRIMARY_CONTACT or SHARE_EVERYBODY
+- Auto-Collaboration: COLLAB_ALL_MEMBERS adds all org members as collaborators on new tickets
+- Account Manager: Can be a Staff or Team
+
+Source: include/class.organization.php lines 42-47, 85-96",Medium,mosticket,Data-Model
+Story,,Users & Organizations,REQ-5.3: CSV Import/Export,"Both Users and Organizations support bulk CSV import via CsvImport and export via the Export class.
+
+Source: include/class.export.php lines 27-34",Low,mosticket,Data-Model
+Epic,Authentication & Authorization,,REQ-6: Authentication & Authorization,"Replicate dual auth registries (staff/client), 2FA, token-based guest access, role-based permissions, and brute-force protection. Source: include/class.auth.php",High,mosticket,Security
+Story,,Authentication & Authorization,REQ-6.1: Dual Authentication Registries,"Separate backend registries for Staff (StaffAuthenticationBackend) and Users (UserAuthenticationBackend). Each supports pluggable backends: local DB password, LDAP, OAuth2, SSO (REMOTE_USER).
+
+Source: include/class.auth.php lines 528-535, 841-847",High,mosticket,Security
+Story,,Authentication & Authorization,REQ-6.2: Two-Factor Authentication,"Staff login supports 2FA as a secondary verification step after primary auth. The TwoFactorAuthentication interface provides getInputForm() and validate().
+
+Source: scp/login.php lines 88-112",Medium,mosticket,Security
+Story,,Authentication & Authorization,REQ-6.3: Token-Based Guest Access,"Clients without accounts can access specific tickets via AuthToken - a hash of ticket ID + user ID + system secret. Validated via TicketUser::lookupByToken().
+
+Source: include/class.client.php lines 65-128",Medium,mosticket,Security
+Story,,Authentication & Authorization,REQ-6.4: Role-Based Permissions,"Roles define permission sets per department. A Department_Access junction links Staff + Department + Role. Permissions are checked via Role::hasPerm() for every ticket action.
+
+Source: include/class.ticket.php lines 1486-1500",High,mosticket,Security
+Story,,Authentication & Authorization,REQ-6.5: Brute-Force Protection,"AuthStrike lockout mechanism tracks failed login attempts and throttles after threshold is exceeded.
+
+Source: include/class.auth.php lines 280-300",Medium,mosticket,Security
+Epic,Email System,,REQ-7: Email System,"Replicate full inbound/outbound email pipeline: IMAP/POP3 fetching, email-to-ticket, threaded replies, templates with merge fields, and banlist. Source: include/class.mailfetch.php, include/class.mailer.php",High,mosticket,Email
+Story,,Email System,REQ-7.1: Inbound Email (Email-to-Ticket),"The Fetcher class polls IMAP/POP3 mailboxes. For each message it:
+1. Parses MIME via Mail_Parse (including TNEF/winmail.dat decoding)
+2. Checks In-Reply-To/References headers for existing thread matching
+3. If matched, posts as a reply; if not, creates a new ticket
+4. Post-processing: mark as seen, archive, or delete from server
+
+Source: include/class.mailfetch.php lines 78-99, include/api.tickets.php lines 181-233",High,mosticket,Email
+Story,,Email System,REQ-7.2: Outbound Email,"Mailer class sends via SMTP or email relay. Supports:
+- In-Reply-To / References headers for threading
+- Attachment inclusion from thread entries
+- Agent signature injection (personal or department)
+
+Source: include/class.ticket.php lines 4681-4720",High,mosticket,Email
+Story,,Email System,REQ-7.3: Email Templates,"EmailTemplateGroup contains named templates for each event type:
+- ticket.autoresp: New ticket created -> Ticket owner
+- ticket.alert: New ticket created -> Staff
+- message.alert: New client message -> Assigned agent/team
+- ticket.reply: Agent responds -> Ticket owner + collaborators
+- assigned.alert: Ticket assigned -> Assigned agent/team lead
+- transfer.alert: Ticket transferred -> Target dept members
+- ticket.overdue: SLA violation -> Assigned agent / dept manager
+- note.alert: Internal note posted -> Assigned agent
+- ticket.activity.notice: Ticket activity -> Ticket owner
+
+Each template supports %{variable} merge fields resolved by VariableReplacer.
+
+Source: include/class.template.php lines 30-118, include/class.variable.php lines 82-96",High,mosticket,Email
+Story,,Email System,REQ-7.4: Email Banlist,"BanList blocks ticket creation from specific email addresses/domains.
+
+Source: include/class.ticket.php line 27, include/class.banlist.php",Low,mosticket,Email
+Epic,Ticket Filtering & Automation,,REQ-8: Ticket Filtering & Automation,"Replicate osTicket's rule-based ticket filter engine with ordered execution, match-all/any logic, and configurable actions. Source: include/class.filter.php, include/class.filter_action.php",High,mosticket,Automation
+Story,,Ticket Filtering & Automation,REQ-8.1: Filter Engine,"The Filter class evaluates incoming tickets against ordered rules. Each filter has:
+- execorder (execution priority)
+- match_all_rules or match_any_rules mode
+- stop_onmatch flag to halt further processing
+- isactive toggle
+
+Source: include/class.filter.php lines 19-33, 152-158",High,mosticket,Automation
+Story,,Ticket Filtering & Automation,REQ-8.2: Filter Rules,"FilterRule defines criteria: field (what), operator (how), and value (val). Matches against ticket metadata like sender email, subject, headers, source.
+
+Source: include/class.filter.php lines 88-102",Medium,mosticket,Automation
+Story,,Ticket Filtering & Automation,REQ-8.3: Filter Actions,"FilterAction executes on match. Action types:
+- FA_RejectTicket: Throw RejectedException, block creation
+- FA_RouteDepartment: Route to specific department
+- FA_AssignTopic: Set help topic
+- FA_AssignAgent: Assign to staff
+- FA_SetStatus: Set initial status
+- Send canned response, set SLA, set priority
+
+Source: include/class.filter_action.php lines 145-212",High,mosticket,Automation
+Story,,Ticket Filtering & Automation,REQ-8.4: Filter Integrity,"When a referenced object (department, agent, topic) is deleted, the system auto-disables affected filters and sets integrity flags (FLAG_INACTIVE_HT, FLAG_INACTIVE_DEPT, FLAG_DELETED_OBJECT).
+
+Source: include/class.filter.php lines 35-38, 205-216",Medium,mosticket,Automation
+Epic,Dynamic Forms & Custom Fields,,REQ-9: Dynamic Forms & Custom Fields,"Replicate osTicket's EAV-based dynamic forms system with configurable field types, visibility controls, and CDATA materialization. Source: include/class.dynamic_forms.php, include/class.forms.php",High,mosticket,Data-Model
+Story,,Dynamic Forms & Custom Fields,REQ-9.1: EAV Architecture,"The forms system uses Entity-Attribute-Value pattern:
+- DynamicForm: Form template definition
+- DynamicFormField: Field definitions (label, type, sort order, required, visibility, configuration JSON)
+- DynamicFormEntry: Instance of a filled form
+- DynamicFormEntryAnswer: Individual field values
+
+Field types: Text, TextArea, Dropdown, Checkbox, Date, Phone, Number, Thread (rich text with attachments), Priority, File Upload.
+
+Source: include/class.dynamic_forms.php lines 29-40, 165-175",High,mosticket,Data-Model
+Story,,Dynamic Forms & Custom Fields,REQ-9.2: Visibility Controls,"Fields have bitmask visibility: isVisibleToStaff(), isVisibleToUsers(), isRequiredForStaff(), isRequiredForUsers(), isRequiredForClose() (prevents ticket closure until filled).
+
+Source: include/class.forms.php lines 103-119",Medium,mosticket,Security
+Story,,Dynamic Forms & Custom Fields,REQ-9.3: CDATA Materialization,"Dynamic form answers are flattened into *__cdata tables (e.g., ticket__cdata) for performant searching and sorting. This must be replicated as denormalized fields or a search index in Salesforce.
+
+Source: include/class.ticket.php lines 4841-4855",Medium,mosticket,Data-Model
+Epic,Tasks,,REQ-10: Tasks,"Replicate osTicket's task subsystem - tasks linked to tickets or standalone with their own threads and assignment. Source: include/class.task.php",Medium,mosticket,Data-Model
+Story,,Tasks,REQ-10.1: Task Object,"Tasks can be linked to a ticket (object_id + object_type='T') or standalone. Fields: number, dept_id, staff_id, team_id, flags (ISOPEN 0x0001, ISOVERDUE 0x0002), duedate, created, closed.
+
+Permissions: PERM_CREATE, PERM_EDIT, PERM_ASSIGN, PERM_TRANSFER, PERM_CLOSE, PERM_DELETE.
+
+Tasks have their own TaskThread (object_type 'A') for internal communication.
+
+Source: include/class.task.php lines 20-67, 69-74",Medium,mosticket,Data-Model
+Epic,Knowledgebase & Canned Responses,,REQ-11: Knowledgebase & Canned Responses,"Replicate FAQ system with hierarchical categories and canned response library. Source: include/class.faq.php, include/class.category.php, include/class.canned.php",Medium,mosticket,Knowledge-Base
+Story,,Knowledgebase & Canned Responses,REQ-11.1: FAQ System,"Category: Hierarchical via category_pid, with ispublic flag.
+FAQ: Linked to a category. Visibility levels: Private (0), Public (1), Featured (2). Supports rich text answers, file attachments, keywords, and help topic linking via FaqTopic. Multi-language support via CustomDataTranslation. PDF export via FAQ::printPdf() using mPDF.
+
+Source: include/class.faq.php lines 19-63, include/class.category.php lines 17-35",Medium,mosticket,Knowledge-Base
+Story,,Knowledgebase & Canned Responses,REQ-11.2: Canned Responses,"Canned object with: title, response (rich text), dept_id (0 = all departments), isenabled, file attachments (type 'C'). Department-filtered visibility for agents. Integrated into ticket filter actions. Cannot be deleted if linked to active filters.
+
+Source: include/class.canned.php lines 18-48, 199-201",Medium,mosticket,Knowledge-Base
+Epic,Custom Queues & Advanced Search,,REQ-12: Custom Queues & Advanced Search,"Replicate osTicket's configurable queue system and full-text search. Source: include/class.queue.php, include/class.search.php",Medium,mosticket,UI
+Story,,Custom Queues & Advanced Search,REQ-12.1: Queue System,"CustomQueue model with hierarchical parent/child structure. Supports inheritance flags:
+- FLAG_INHERIT_CRITERIA (0x0008)
+- FLAG_INHERIT_COLUMNS (0x0010)
+- FLAG_INHERIT_SORTING (0x0020)
+
+Each queue has configurable columns (QueueColumn with annotations and conditional formatting), sort orders, and filter criteria.
+
+Source: include/class.queue.php lines 18-64",Medium,mosticket,UI
+Story,,Custom Queues & Advanced Search,REQ-12.2: Advanced Search,"AdhocSearch for one-off searches (session-stored, not persisted). SavedSearch for persistent agent-specific searches. Both use the same criteria to QuerySet mangle pipeline. Supports full-text keyword search with relevance scoring.
+
+Source: include/class.search.php lines 82-195",Medium,mosticket,UI
+Epic,File Attachments,,REQ-13: File Attachments,"Replicate content-addressable file storage with deduplication and secure access URLs. Source: include/class.file.php",Medium,mosticket,Data-Model
+Story,,File Attachments,REQ-13.1: Content-Addressable Storage,"AttachmentFile uses SHA1 hash (key) for deduplication. Multiple Attachment records can reference the same file. Storage backends are pluggable (Database default, Filesystem, S3 via plugin).
+
+Source: include/class.file.php lines 45-47, 130-131",Medium,mosticket,Data-Model
+Story,,File Attachments,REQ-13.2: Secure File Access,"File URLs use HMAC-SHA1 signature + expiration timestamp. Optional auth requirement for file access (isAuthRequiredForFiles()).
+
+Source: include/class.file.php lines 234-260",Medium,mosticket,Security
+Epic,Client Portal,,REQ-14: Client Portal,"Replicate osTicket's end-user portal: ticket submission, listing, viewing, guest access. Build on Salesforce Experience Cloud. Source: open.php, include/client/",High,mosticket,UI
+Story,,Client Portal,REQ-14.1: Ticket Submission,"open.php renders TicketForm with dynamic fields, CAPTCHA validation, and calls Ticket::create() with source='Web'.
+
+Source: open.php lines 17-61",High,mosticket,UI
+Story,,Client Portal,REQ-14.2: Ticket Listing & Viewing,"Authenticated clients see:
+- Their own tickets (user_id match)
+- Tickets where they are a collaborator
+- Organization tickets (if org sharing enabled)
+
+Thread rendering uses MODE_CLIENT to hide internal notes. Custom field display filtered by FLAG_CLIENT_VIEW.
+
+Source: include/client/tickets.inc.php lines 75-95, include/client/view.inc.php lines 1-150",High,mosticket,UI
+Story,,Client Portal,REQ-14.3: Guest Access,"Users without accounts access tickets via email+ticket number or secure auth token links.
+
+Source: include/class.client.php lines 24-84",Medium,mosticket,Security
+Epic,Dashboard & Reporting,,REQ-15: Dashboard & Reporting,"Replicate osTicket's overview reports, agent performance metrics, and CSV/PDF export. Source: include/class.report.php, include/class.export.php",Medium,mosticket,Reporting
+Story,,Dashboard & Reporting,REQ-15.1: Overview Reports,"OverviewReport aggregates from thread_event table. Metrics: tickets created, closed, reopened, assigned, overdue, transferred - grouped by date, department, help topic, or agent. Performance metrics: average service time (creation-to-close), average response time (message-to-response).
+
+Source: include/class.report.php lines 85-182",Medium,mosticket,Reporting
+Story,,Dashboard & Reporting,REQ-15.2: Export,"CSV export via Export::dumpTickets() with UTF-8 BOM for Excel compatibility. Includes custom field data. PDF export via Ticket2PDF using mPDF. Session-based query persistence ensures export matches the current UI view.
+
+Source: include/class.export.php lines 43-117",Medium,mosticket,Reporting
+Epic,REST API,,REQ-16: REST API,"Replicate osTicket's REST API for ticket creation, email processing, and cron execution. Source: api/http.php, include/class.api.php",High,mosticket,API
+Story,,REST API,REQ-16.1: Endpoints,"Endpoints:
+- POST /api/tickets.json - Create ticket from JSON
+- POST /api/tickets.xml - Create ticket from XML
+- POST /api/tickets.email - Create ticket from raw email MIME
+- POST /api/tasks/cron - Trigger cron tasks
+
+Authentication via X-API-Key header validated against API_KEY_TABLE with IP whitelist check.
+
+Source: api/http.php lines 1-30, include/class.api.php lines 192-215",High,mosticket,API
+Story,,REST API,REQ-16.2: API Key Management,"API keys have: key (string), ipaddr (IP whitelist), isactive, can_create_tickets, can_exec_cron permission flags.
+
+Source: include/class.api.php lines 68-114",Medium,mosticket,API
+Epic,Plugin Framework,,REQ-17: Plugin / Extension Framework,"Replicate osTicket's multi-instance plugin architecture with lifecycle hooks and configuration. Source: include/class.plugin.php",Low,mosticket,Data-Model
+Story,,Plugin Framework,REQ-17.1: Plugin Architecture,"Plugins support multi-instance: one installed plugin can have N PluginInstance records, each with its own config and active/inactive state. Lifecycle hooks: install(), init() (every request), bootstrap() (per active instance), uninstall(). Configuration via PluginConfig using the Form API.
+
+Source: include/class.plugin.php lines 188-207, 10-15",Low,mosticket,Data-Model
+Epic,Agent Interface,,REQ-18: Agent Interface (Staff Control Panel),"Replicate osTicket's agent UI: ticket locking, auto-claim, and assignment workflows. Source: include/class.ticket.php, include/class.dept.php",High,mosticket,UI
+Story,,Agent Interface,REQ-18.1: Ticket Locking,"When an agent views/replies, a Lock is acquired to prevent collision. Other agents see a blocked reply area if another agent holds a valid lock.
+
+Source: include/class.ticket.php lines 54-57",Medium,mosticket,UI
+Story,,Agent Interface,REQ-18.2: Auto-Claim,"If enabled per department (FLAG_DISABLE_AUTO_CLAIM is NOT set), the first agent to reply is automatically assigned to the ticket.
+
+Source: include/class.dept.php lines 73-74",Medium,mosticket,Automation
+Story,,Agent Interface,REQ-18.3: Agent Assignment,"Tickets can be assigned to a specific Staff or Team. Assignment form provides filtered dropdowns based on department membership restrictions (FLAG_ASSIGN_MEMBERS_ONLY).
+
+Source: include/class.ticket.php lines 1000-1020",Medium,mosticket,UI
+Epic,System Configuration,,REQ-19: System Configuration,"Replicate osTicket's global settings as Salesforce Custom Settings or Custom Metadata. Source: include/class.config.php",Medium,mosticket,Data-Model
+Story,,System Configuration,REQ-19.1: Global Settings,"Key config values from OsticketConfig:
+- helpdesk_title, helpdesk_url, default_dept_id, default_sla_id, default_ticket_status_id
+- max_open_tickets (per user), max_page_size, overdue_grace_period
+- Alert toggles: ticket_alert_active, message_alert_active, assigned_alert_active with per-recipient controls
+- Auto-responder toggles per event type
+- date_formats, default_timezone
+
+Source: include/class.config.php lines 461-479",Medium,mosticket,Data-Model
+Epic,Data Migration,,REQ-20: Data Migration,"Extract all data from osTicket MySQL and migrate to Salesforce MosTicket objects with ID crosswalk and validation. Source: bootstrap.php, setup/inc/streams/core/install-mysql.sql",High,mosticket,Migration
+Story,,Data Migration,REQ-20.1: Source Schema,"The osTicket MySQL schema uses prefixed tables (default ost_). Key tables: ost_ticket, ost_thread, ost_thread_entry, ost_thread_event, ost_thread_collaborator, ost_thread_referral, ost_ticket__cdata, ost_department, ost_staff, ost_team, ost_team_member, ost_user, ost_user_email, ost_organization, ost_sla, ost_help_topic, ost_filter, ost_filter_rule, ost_filter_action, ost_faq, ost_faq_category, ost_faq_topic, ost_canned_response, ost_email_template, ost_email_template_group, ost_config, ost_form, ost_form_field, ost_form_entry, ost_form_entry_values, ost_file, ost_file_chunk, ost_attachment, ost_queue, ost_api_key, ost_plugin, ost_plugin_instance, ost_schedule, ost_schedule_entry.
+
+Source: bootstrap.php lines 72-169, setup/inc/streams/core/install-mysql.sql lines 99-171",High,mosticket,Migration
+Story,,Data Migration,REQ-20.2: Migration Requirements,"Requirements:
+- Extract all data from MySQL tables listed in REQ-20.1
+- Map osTicket IDs to Salesforce IDs with a crosswalk table
+- Migrate file attachments from ost_file + ost_file_chunk to Salesforce Files (ContentVersion/ContentDocumentLink)
+- Preserve thread chronology (entries + events interleaved by timestamp)
+- Validate: ticket counts, thread entry counts, user counts, attachment integrity",High,mosticket,Migration

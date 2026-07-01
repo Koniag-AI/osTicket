@@ -293,13 +293,13 @@ Signal::connect('api', function($dispatcher) {
         url('^/auth/okta$', function() {
             // Validate state parameter
             $state = $_GET['state'] ?? '';
-            if (!$state || !hash_equals($_SESSION['okta:state'] ?? '', $state)) {
+            if (!$state || !is_string($state) || !hash_equals($_SESSION['okta:state'] ?? '', $state)) {
                 Http::response(403, 'Invalid state parameter');
                 return;
             }
 
             $code = $_GET['code'] ?? '';
-            if (!$code) {
+            if (!$code || !is_string($code)) {
                 Http::response(400, 'Missing authorization code');
                 return;
             }

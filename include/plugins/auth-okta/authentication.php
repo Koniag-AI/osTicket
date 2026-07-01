@@ -70,6 +70,8 @@ trait OktaOidcTrait {
                 'Accept: application/json',
             ),
             CURLOPT_TIMEOUT        => 10,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ));
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -107,6 +109,8 @@ trait OktaOidcTrait {
                 'Accept: application/json',
             ),
             CURLOPT_TIMEOUT        => 15,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ));
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -130,7 +134,7 @@ trait OktaOidcTrait {
 
         if (!$claims
                 || !isset($claims['nonce'])
-                || $claims['nonce'] !== ($_SESSION['okta:nonce'] ?? ''))
+                || !hash_equals($_SESSION['okta:nonce'] ?? '', $claims['nonce']))
             return array(false, false);
 
         return array($claims, $data);
@@ -176,15 +180,16 @@ class OktaStaffAuthBackend extends ExternalStaffAuthenticationBackend {
             return null;
 
         $email = $claims['email'] ?? null;
-        if (!$email)
-            return null;
 
-        // Also try /userinfo for additional profile data
+        // Try /userinfo for additional profile data
         if (!empty($tokenData['access_token'])) {
             $profile = $this->fetchUserInfo($tokenData['access_token']);
             if (!$email && !empty($profile['email']))
                 $email = $profile['email'];
         }
+
+        if (!$email)
+            return null;
 
         // Look up existing staff by email
         $staff = StaffSession::lookup(array('email' => $email));
@@ -288,7 +293,7 @@ Signal::connect('api', function($dispatcher) {
         url('^/auth/okta$', function() {
             // Validate state parameter
             $state = $_GET['state'] ?? '';
-            if (!$state || $state !== ($_SESSION['okta:state'] ?? '')) {
+            if (!$state || !hash_equals($_SESSION['okta:state'] ?? '', $state)) {
                 Http::response(403, 'Invalid state parameter');
                 return;
             }
@@ -324,10 +329,15 @@ Signal::connect('api', function($dispatcher) {
                 unset($_SESSION['okta:nonce'], $_SESSION['okta:portal']);
 
                 if ($result instanceof ClientSession) {
-                    if ($bk->login($result, $bk))
-                        Http::redirect(ROOT_PATH . 'tickets.php');
-                    else
-                        Http::redirect(ROOT_PATH . 'login.php?e=login');
+                    try {
+                        if ($bk->login($result, $bk))
+                            Http::redirect(ROOT_PATH . 'tickets.php');
+                        else
+                            Http::redirect(ROOT_PATH . 'login.php?e=login');
+                    } catch (AccessDenied $e) {
+                        $_SESSION['_client']['auth']['msg'] = $e->getMessage();
+                        Http::redirect(ROOT_PATH . 'login.php');
+                    }
                 } elseif ($result instanceof ClientCreateRequest) {
                     if ($result->attemptAutoRegister())
                         Http::redirect(ROOT_PATH . 'tickets.php');

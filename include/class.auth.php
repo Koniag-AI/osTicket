@@ -1623,9 +1623,9 @@ extends PasswordPolicy {
 
     function onSet($passwd, $current) {
         $pwdlen = strlen($passwd);
-        if ($pwdlen < 6) {
+        if ($pwdlen < 10) {
             throw new BadPassword(
-                __('Password must be at least 6 characters'));
+                __('Password must be at least 10 characters'));
         } elseif ($pwdlen > 128) {
             throw new BadPassword(
                 sprintf('%s - %s', __('Password is too long'), __('maximum of 128 characters allowed')));
